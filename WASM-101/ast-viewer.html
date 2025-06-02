@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAssembly S-Expression Tree Viewer</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 0;
+            min-height: 600px;
+        }
+        
+        .code-panel {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 30px;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .code-panel h3 {
+            color: #4fc3f7;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+        
+        .code-block {
+            background: #2d2d30;
+            border-radius: 8px;
+            padding: 20px;
+            border-left: 4px solid #4fc3f7;
+            position: relative;
+        }
+        
+        .code-line {
+            margin: 8px 0;
+            line-height: 1.6;
+            position: relative;
+        }
+        
+        .code-line.highlight {
+            background: rgba(76, 175, 80, 0.2);
+            border-radius: 4px;
+            padding: 2px 8px;
+            margin: 2px -8px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { background: rgba(76, 175, 80, 0.2); }
+            50% { background: rgba(76, 175, 80, 0.4); }
+        }
+        
+        .tree-panel {
+            background: #f8f9fa;
+            padding: 30px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .tree-panel h3 {
+            color: #2c3e50;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+        
+        .tree-container {
+            width: 100%;
+            height: 500px;
+            position: relative;
+            overflow: auto;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            background: white;
+        }
+        
+        .tree-svg {
+            width: 100%;
+            height: 100%;
+            min-width: 800px;
+            min-height: 600px;
+        }
+        
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .node circle {
+            stroke: #2c3e50;
+            stroke-width: 2;
+            transition: all 0.3s ease;
+        }
+        
+        .node.module circle {
+            fill: #3498db;
+            r: 8;
+        }
+        
+        .node.func circle {
+            fill: #e74c3c;
+            r: 7;
+        }
+        
+        .node.export circle {
+            fill: #f39c12;
+            r: 6;
+        }
+        
+        .node.param circle {
+            fill: #9b59b6;
+            r: 5;
+        }
+        
+        .node.result circle {
+            fill: #1abc9c;
+            r: 5;
+        }
+        
+        .node.instruction circle {
+            fill: #27ae60;
+            r: 4;
+        }
+        
+        .node.literal circle {
+            fill: #95a5a6;
+            r: 3;
+        }
+        
+        .node:hover circle {
+            stroke-width: 3;
+            filter: brightness(1.2);
+            transform: scale(1.2);
+        }
+        
+        .node.highlighted circle {
+            stroke: #ff6b6b;
+            stroke-width: 4;
+            fill: #ff6b6b !important;
+            animation: glow 2s infinite;
+        }
+        
+        @keyframes glow {
+            0%, 100% { filter: drop-shadow(0 0 5px #ff6b6b); }
+            50% { filter: drop-shadow(0 0 15px #ff6b6b); }
+        }
+        
+        .node text {
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 11px;
+            fill: #2c3e50;
+            text-anchor: middle;
+            pointer-events: none;
+            font-weight: bold;
+        }
+        
+        .link {
+            fill: none;
+            stroke: #bdc3c7;
+            stroke-width: 1.5;
+            stroke-opacity: 0.6;
+            transition: all 0.3s ease;
+        }
+        
+        .link.highlighted {
+            stroke: #ff6b6b;
+            stroke-width: 3;
+            stroke-opacity: 1;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .control-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.3s ease;
+        }
+        
+        .control-btn:hover {
+            background: #2980b9;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 11px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        
+        .legend-circle {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            border: 2px solid #2c3e50;
+        }
+        
+        /* Legend colors matching the actual tree nodes */
+        .legend-circle.module { background: #3498db; }
+        .legend-circle.func { background: #e74c3c; }
+        .legend-circle.export { background: #f39c12; }
+        .legend-circle.param { background: #9b59b6; }
+        .legend-circle.result { background: #1abc9c; }
+        .legend-circle.instruction { background: #27ae60; }
+        .legend-circle.literal { background: #95a5a6; }
+        
+        .syntax-highlight .keyword { color: #569cd6; }
+        .syntax-highlight .function { color: #dcdcaa; }
+        .syntax-highlight .param { color: #9cdcfe; }
+        .syntax-highlight .type { color: #4ec9b0; }
+        .syntax-highlight .comment { color: #6a9955; font-style: italic; }
+        .syntax-highlight .string { color: #ce9178; }
+        .syntax-highlight .export { color: #c586c0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WebAssembly S-Expression Tree</h1>
+            <p>Interactive visualization of add.wat module structure</p>
+        </div>
+        
+        <div class="content">
+            <div class="code-panel">
+                <h3>🔍 Source Code (add.wat)</h3>
+                <div class="code-block">
+                    <div class="syntax-highlight">
+                        <div class="code-line" data-node="module">(<span class="keyword">module</span></div>
+                        <div class="code-line" data-node="comment1">  <span class="comment">;; Define the add function</span></div>
+                        <div class="code-line" data-node="func">  (<span class="keyword">func</span> <span class="function">$add</span> (<span class="param">param</span> <span class="param">$a</span> <span class="type">i32</span>) (<span class="param">param</span> <span class="param">$b</span> <span class="type">i32</span>) (<span class="param">result</span> <span class="type">i32</span>)</div>
+                        <div class="code-line" data-node="comment2">    <span class="comment">;; Load the first parameter onto the stack</span></div>
+                        <div class="code-line" data-node="local.get1">    <span class="keyword">local.get</span> <span class="param">$a</span></div>
+                        <div class="code-line" data-node="comment3">    <span class="comment">;; Load the second parameter onto the stack</span></div>
+                        <div class="code-line" data-node="local.get2">    <span class="keyword">local.get</span> <span class="param">$b</span></div>
+                        <div class="code-line" data-node="comment4">    <span class="comment">;; Add the two values on the stack</span></div>
+                        <div class="code-line" data-node="i32.add">    <span class="keyword">i32.add</span></div>
+                        <div class="code-line" data-node="func-end">  )</div>
+                        <div class="code-line" data-node="comment5">  </div>
+                        <div class="code-line" data-node="comment6">  <span class="comment">;; Export the add function so it can be called from JavaScript</span></div>
+                        <div class="code-line" data-node="export">  (<span class="export">export</span> <span class="string">"add"</span> (<span class="keyword">func</span> <span class="function">$add</span>))</div>
+                        <div class="code-line" data-node="module-end">)</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 30px;">
+                    <h3>🎯 Instructions</h3>
+                    <p style="color: #b3b3b3; line-height: 1.6;">
+                        • Click on any node in the tree to highlight the corresponding code<br>
+                        • Hover over nodes to see details<br>
+                        • Use controls to expand/collapse or reset the view<br>
+                        • Each color represents a different AST node type
+                    </p>
+                </div>
+            </div>
+            
+            <div class="tree-panel">
+                <h3>🌳 Abstract Syntax Tree</h3>
+                <div class="controls">
+                    <button class="control-btn" onclick="expandAll()">Expand All</button>
+                    <button class="control-btn" onclick="collapseAll()">Collapse All</button>
+                    <button class="control-btn" onclick="resetView()">Reset View</button>
+                </div>
+                
+                <div class="tree-container">
+                    <svg class="tree-svg" id="tree-svg">
+                        <!-- Tree will be generated here -->
+                    </svg>
+                </div>
+                
+                <div class="legend">
+                    <div style="font-weight: bold; margin-bottom: 8px;">Node Types:</div>
+                    <div class="legend-item">
+                        <div class="legend-circle module"></div>
+                        <span>module</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-circle func"></div>
+                        <span>func</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-circle export"></div>
+                        <span>export</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-circle param"></div>
+                        <span>param</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-circle result"></div>
+                        <span>result</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-circle instruction"></div>
+                        <span>instruction</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-circle literal"></div>
+                        <span>literal</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Define the AST structure for add.wat
+        const astData = {
+            name: "module",
+            type: "module",
+            codeRef: "module",
+            children: [
+                {
+                    name: "func $add",
+                    type: "func",
+                    codeRef: "func",
+                    children: [
+                        {
+                            name: "param $a",
+                            type: "param",
+                            codeRef: "func",
+                            children: [
+                                {
+                                    name: "i32",
+                                    type: "literal",
+                                    codeRef: "func"
+                                }
+                            ]
+                        },
+                        {
+                            name: "param $b",
+                            type: "param",
+                            codeRef: "func",
+                            children: [
+                                {
+                                    name: "i32",
+                                    type: "literal",
+                                    codeRef: "func"
+                                }
+                            ]
+                        },
+                        {
+                            name: "result",
+                            type: "result",
+                            codeRef: "func",
+                            children: [
+                                {
+                                    name: "i32",
+                                    type: "literal",
+                                    codeRef: "func"
+                                }
+                            ]
+                        },
+                        {
+                            name: "local.get $a",
+                            type: "instruction",
+                            codeRef: "local.get1"
+                        },
+                        {
+                            name: "local.get $b",
+                            type: "instruction",
+                            codeRef: "local.get2"
+                        },
+                        {
+                            name: "i32.add",
+                            type: "instruction",
+                            codeRef: "i32.add"
+                        }
+                    ]
+                },
+                {
+                    name: "export",
+                    type: "export",
+                    codeRef: "export",
+                    children: [
+                        {
+                            name: "\"add\"",
+                            type: "literal",
+                            codeRef: "export"
+                        },
+                        {
+                            name: "func $add",
+                            type: "func",
+                            codeRef: "export"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        let svg, g, tree, root;
+        let width = 800, height = 600;
+
+        function initTree() {
+            svg = d3.select("#tree-svg");
+            
+            // Clear any existing content
+            svg.selectAll("*").remove();
+            
+            g = svg.append("g");
+            
+            tree = d3.tree().size([height - 100, width - 200]);
+            
+            root = d3.hierarchy(astData);
+            root.x0 = height / 2;
+            root.y0 = 0;
+
+            // Collapse all children initially except first level
+            root.children.forEach(collapse);
+            
+            update(root);
+        }
+
+        function collapse(d) {
+            if (d.children) {
+                d._children = d.children;
+                d._children.forEach(collapse);
+                d.children = null;
+            }
+        }
+
+        function expand(d) {
+            if (d._children) {
+                d.children = d._children;
+                d._children = null;
+            }
+        }
+
+        function update(source) {
+            // Compute the new tree layout
+            const treeData = tree(root);
+            const nodes = treeData.descendants();
+            const links = treeData.descendants().slice(1);
+
+            // Normalize for fixed-depth
+            nodes.forEach(d => d.y = d.depth * 150 + 50);
+
+            // Update the nodes
+            const node = g.selectAll("g.node")
+                .data(nodes, d => d.id || (d.id = ++i));
+
+            // Enter any new nodes at the parent's previous position
+            const nodeEnter = node.enter().append("g")
+                .attr("class", d => `node ${d.data.type}`)
+                .attr("transform", d => `translate(${source.y0},${source.x0})`)
+                .on("click", click)
+                .on("mouseover", function(event, d) {
+                    d3.select(this).select("circle")
+                        .transition()
+                        .duration(200)
+                        .attr("r", d => getRadius(d.data.type) * 1.5);
+                })
+                .on("mouseout", function(event, d) {
+                    d3.select(this).select("circle")
+                        .transition()
+                        .duration(200)
+                        .attr("r", getRadius(d.data.type));
+                });
+
+            nodeEnter.append("circle")
+                .attr("r", 1e-6);
+
+            nodeEnter.append("text")
+                .attr("dy", d => d.children || d._children ? -15 : 15)
+                .attr("text-anchor", "middle")
+                .text(d => d.data.name)
+                .style("fill-opacity", 1e-6);
+
+            // Transition nodes to their new position
+            const nodeUpdate = nodeEnter.merge(node);
+
+            nodeUpdate.transition()
+                .duration(750)
+                .attr("transform", d => `translate(${d.y},${d.x})`);
+
+            nodeUpdate.select("circle")
+                .attr("r", d => getRadius(d.data.type))
+                .style("fill", d => d._children ? "lightsteelblue" : "white");
+
+            nodeUpdate.select("text")
+                .style("fill-opacity", 1);
+
+            // Transition exiting nodes to the parent's new position
+            const nodeExit = node.exit().transition()
+                .duration(750)
+                .attr("transform", d => `translate(${source.y},${source.x})`)
+                .remove();
+
+            nodeExit.select("circle")
+                .attr("r", 1e-6);
+
+            nodeExit.select("text")
+                .style("fill-opacity", 1e-6);
+
+            // Update the links
+            const link = g.selectAll("path.link")
+                .data(links, d => d.id);
+
+            // Enter any new links at the parent's previous position
+            const linkEnter = link.enter().insert("path", "g")
+                .attr("class", "link")
+                .attr("d", d => {
+                    const o = {x: source.x0, y: source.y0};
+                    return diagonal(o, o);
+                });
+
+            // Transition links to their new position
+            linkEnter.merge(link).transition()
+                .duration(750)
+                .attr("d", d => diagonal(d, d.parent));
+
+            // Transition exiting nodes to the parent's new position
+            link.exit().transition()
+                .duration(750)
+                .attr("d", d => {
+                    const o = {x: source.x, y: source.y};
+                    return diagonal(o, o);
+                })
+                .remove();
+
+            // Store the old positions for transition
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+        }
+
+        function diagonal(s, d) {
+            return `M ${s.y} ${s.x}
+                    C ${(s.y + d.y) / 2} ${s.x},
+                      ${(s.y + d.y) / 2} ${d.x},
+                      ${d.y} ${d.x}`;
+        }
+
+        function click(event, d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+            } else {
+                d.children = d._children;
+                d._children = null;
+            }
+            
+            // Highlight corresponding code
+            highlightCode(d.data.codeRef);
+            
+            update(d);
+        }
+
+        function getRadius(type) {
+            const radii = {
+                module: 8,
+                func: 7,
+                export: 6,
+                param: 5,
+                result: 5,
+                instruction: 4,
+                literal: 3
+            };
+            return radii[type] || 4;
+        }
+
+        function highlightCode(codeRef) {
+            // Remove previous highlights
+            document.querySelectorAll('.code-line').forEach(line => {
+                line.classList.remove('highlight');
+            });
+            
+            // Add highlight to corresponding line(s)
+            const targetLines = document.querySelectorAll(`[data-node="${codeRef}"]`);
+            targetLines.forEach(line => {
+                line.classList.add('highlight');
+            });
+            
+            // Remove highlight after animation
+            setTimeout(() => {
+                targetLines.forEach(line => {
+                    line.classList.remove('highlight');
+                });
+            }, 3000);
+        }
+
+        function expandAll() {
+            root.descendants().forEach(expand);
+            update(root);
+        }
+
+        function collapseAll() {
+            root.children.forEach(collapse);
+            update(root);
+        }
+
+        function resetView() {
+            root.children.forEach(collapse);
+            update(root);
+        }
+
+        // Initialize counter for node IDs
+        let i = 0;
+
+        // Load D3.js and initialize
+        const script = document.createElement('script');
+        script.src = 'https://d3js.org/d3.v7.min.js';
+        script.onload = initTree;
+        document.head.appendChild(script);
+    </script>
+</body>
+</html>
